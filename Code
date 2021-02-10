@@ -1,0 +1,157 @@
+
+#include <ESP8266WiFi.h>
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
+#include <SPI.h>                             // Подключаем библиотеку SPI
+#include <Adafruit_GFX.h>                    // Подключаем библиотеку Adafruit_GFX
+#include <Max72xxPanel.h>                    // Подключаем библиотеку Max72xxPanel
+
+// Wifi network station credentials
+#define WIFI_SSID "HUAWEI P40"
+#define WIFI_PASSWORD "qwerty1111"
+// Telegram BOT Token (Get from Botfather)
+#define BOT_TOKEN "1505161468:AAEt-5XyY-IEcEIIkxGzHJijdTuZQFgjfHc"
+bool qqq=0;
+const unsigned long BOT_MTBS = 1000; // mean time between scan messages
+int pinCS=12;
+int numberOfHorizontalDisplays = 1;          // Количество матриц по горизонтали
+int numberOfVerticalDisplays = 4;            // Количество матриц по-вертикали
+int y = 0;
+int fin=0;
+Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
+
+X509List cert(TELEGRAM_CERTIFICATE_ROOT);
+WiFiClientSecure secured_client;
+UniversalTelegramBot bot(BOT_TOKEN, secured_client);
+unsigned long bot_lasttime; // last time messages' scan has been done
+time_t now;
+String now_rfc3339() {
+  const auto now = system_clock::now();
+  const auto millis = duration_cast<milliseconds>(now.time_since_epoch()).count() % 1000;
+  const auto c_now = system_clock::to_time_t(now);
+
+  stringstream ss;
+  ss << put_time(gmtime(&c_now), "%FT%T") <<
+    '.' << setfill('0') << setw(3) << millis << 'Z';
+  return ss.str();
+}
+void handleNewMessages(int numNewMessages)
+{
+  Serial.print("handleNewMessages ");
+  Serial.println(numNewMessages);
+
+  for (int i = 0; i < numNewMessages; i++)
+  {
+    String chat_id = bot.messages[i].chat_id;
+    String text = bot.messages[i].text;
+    Serial.println(text);
+    String from_name = bot.messages[i].from_name;
+    
+    if (from_name == "")
+      from_name = "Guest";
+    if(text=="/time"){
+      qqq=1;
+      fin=0;
+    }
+    if(text=="/off"){
+      qqq=0;
+      matrix.fillScreen(LOW);
+      matrix.write(); 
+    }
+    if(text.substring(0, 6)=="/timer"){
+      qqq=1;
+      String a=text.substring(7);
+      fin=a.toInt();
+    }
+    if (text == "/start")
+    {
+      String welcome = "";
+      welcome+="/time: показать время\n";
+      welcome+="/off: отключить часы\n";
+      welcome+="/set_timer: установить таймер\n";
+      bot.sendMessage(chat_id, welcome, "Markdown");
+    }
+  }
+}
+
+
+void setup()
+{
+  Serial.begin(115200);
+  Serial.println();
+  matrix.setIntensity(3);                    // Задаем яркость от 0 до 15
+  matrix.setRotation(3);
+    matrix.fillScreen(LOW); 
+    matrix.write();  
+  // Направление текста 1,2,3,4
+  delay(10);
+
+  // attempt to connect to Wifi network:
+  configTime(0, 0, "pool.ntp.org");      // get UTC time via NTP
+  secured_client.setTrustAnchors(&cert); // Add root certificate for api.telegram.org
+  Serial.print("Connecting to Wifi SSID ");
+  Serial.print(WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.print("\nWiFi connected. IP address: ");
+  Serial.println(WiFi.localIP());
+
+  // Check NTP/Time, usually it is instantaneous and you can delete the code below.
+  Serial.print("Retrieving time: ");
+  now = time(nullptr);
+  while (now < 24 * 3600)
+  {
+    Serial.print(".");
+    delay(100);
+    now = time(nullptr);
+  }
+  Serial.println(now);
+}
+void show_time(time_t finish){
+  now = time(nullptr);
+      if(finish!=0){
+      now=finish-now;
+      }
+      else{
+      now+=3600*3;
+      }
+      int h=(now%(3600*24))/3600, m=(now%(3600))/60;
+      //Serial.println(h);
+      //Serial.println(m);
+      int xh = 2;
+      int xm = 19;
+      int y=1;
+      char h1=h/10+'0', h2=h%10+'0', m2=m/10+'0', m1=m%10+'0';
+      matrix.drawChar(13, 1, (String(":"))[0], HIGH, LOW, 1);
+      matrix.drawChar(xh, y, h/10, HIGH, LOW, 1);
+      matrix.drawChar(xh+6, y, h%10, HIGH, LOW, 1);
+      matrix.drawChar(xm, y, m/10, HIGH, LOW, 1);
+      matrix.drawChar(xm+6, y, m%10, HIGH, LOW, 1);
+      
+      matrix.write();
+}
+void loop()
+{
+  if (millis() - bot_lasttime > BOT_MTBS)
+  {
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    
+    while (numNewMessages)
+    {
+      Serial.println("got response");
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+    if(qqq){
+      show_time(fin);
+      delay(100);
+      }
+
+    
+    bot_lasttime = millis();
+  }
+}
